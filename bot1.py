@@ -4,24 +4,44 @@ import unicodedata
 import time
 import json
 import os
-import sqlite3
+import pymongo  
 import random
 import html
 from telebot.types import ChatPermissions, InlineKeyboardMarkup, InlineKeyboardButton
+from dotenv import load_dotenv 
+
+
+load_dotenv()
 
 # ======================
-# CONFIG
+# CONFIG (Environment Variables ကနေ ယူမယ်)
 # ======================
-TOKEN = "8353837085:AAGY96gOEbh9_idLCn2Ct_22cM4ABU0ixAQ"
-BOT_USERNAME = "GroupspamDeleteBot" 
-ADMIN_IDS = [6437656033]
-DATA_FILE = "data1.json"
-FORCE_JOIN_CHANNEL = "@julierbo3_151102"
+TOKEN = os.getenv("TOKEN")
+BOT_USERNAME = os.getenv("BOT_USERNAME")
+ADMIN_IDS = [int(i.strip()) for i in os.getenv("ADMIN_IDS").split(",")]
+DATA_FILE = os.getenv("DATA_FILE")
+FORCE_JOIN_CHANNEL = os.getenv("FORCE_JOIN_CHANNEL")
+MONGO_URI = os.getenv("MONGO_URI")
 
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 
 # ======================
-# DATA MANAGEMENT
+# DATABASE SETUP (MongoDB)
+# ======================
+# MongoDB နဲ့ ချိတ်ဆက်မယ်
+client = pymongo.MongoClient(MONGO_URI)
+db = client['bot_database']
+brain_collection = db['brain']
+
+def init_db():
+    try:
+        client.admin.command('ping')
+        print("✅ MongoDB Connected Successfully!")
+    except Exception as e:
+        print(f"❌ MongoDB Connection Error: {e}")
+
+# ======================
+# DATA MANAGEMENT (JSON for Settings)
 # ======================
 def load_data():
     if os.path.exists(DATA_FILE):
@@ -29,6 +49,8 @@ def load_data():
             data = json.load(f)
     else:
         data = {}
+    
+    # Default values များ သတ်မှတ်ခြင်း
     data.setdefault("mute_time", 30)
     data.setdefault("strikes", {})
     data.setdefault("extra_words", [])
@@ -36,25 +58,28 @@ def load_data():
     data.setdefault("users", [])
     data.setdefault("reply_on", True)
     data.setdefault("reply_on_chats", {})
-    # allow custom warning text
     data.setdefault("warning_text", None)
+    data.setdefault("last_ts", {})
     return data
 
 def save_data():
+    # Duplicate တွေ ဖယ်ထုတ်ခြင်း
     data["groups"] = list(set(data.get("groups", [])))
     data["users"] = list(set(data.get("users", [])))
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
-
+# ဒေတာတွေကို စတင် load လုပ်မယ်
 data = load_data()
-# Track bot startup time
-import datetime
+
+# Bot startup time မှတ်မယ်
 BOT_START_TIME = int(time.time())
-# prepare last-seen timestamps map (persisted)
-data.setdefault("last_ts", {})
+
+# ======================
+# HELPER FUNCTIONS
+# ======================
 def is_joined(user_id):
-    # owners always pass
+    # Owner ဆိုရင် အလိုအလျောက် pass ဖြစ်မယ်
     if user_id in ADMIN_IDS:
         return True
     try:
