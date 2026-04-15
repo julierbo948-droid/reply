@@ -1111,15 +1111,15 @@ def handle_all(message):
 
         if parent:
             if message.content_type == 'sticker':
-            reply_sticker_id = message.sticker.file_id
-            print(f"[DEBUG] 🎯 Saving STICKER-TO-STICKER: parent_sticker={parent[:20]}... → reply_sticker={reply_sticker_id[:20]}...")
-            try:
-                brain_collection.insert_one({
-                    "input_text": parent, 
-                    "reply_text": None, 
-                    "sticker_id": reply_sticker_id # ဒီမှာလည်း ပြင်မယ်
-                })
-                print(f"✅ မှတ်သားပြီး (Sticker-to-Sticker)")
+                reply_sticker_id = message.sticker.file_id
+                print(f"[DEBUG] 🎯 Saving STICKER-TO-STICKER: parent_sticker={parent[:20]}... → reply_sticker={reply_sticker_id[:20]}...")
+                try:
+                    brain_collection.insert_one({
+                        "input_text": parent, 
+                        "reply_text": None, 
+                        "sticker_id": reply_sticker_id # ဒီမှာလည်း ပြင်မယ်
+                    })
+                    print(f"✅ မှတ်သားပြီး (Sticker-to-Sticker)")
                 except Exception as e:
                     print(f"⚠️ Error saving sticker-to-sticker: {e}")
                 return
