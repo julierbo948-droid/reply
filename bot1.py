@@ -1,16 +1,14 @@
-[import telebot
+import telebot
 import re
 import unicodedata
 import time
 import json
 import os
-import pymongo
+import pymongo  
 import random
 import html
-import sqlite3
-import datetime
 from telebot.types import ChatPermissions, InlineKeyboardMarkup, InlineKeyboardButton
-from dotenv import load_dotenv
+from dotenv import load_dotenv 
 
 
 load_dotenv()
@@ -19,50 +17,23 @@ load_dotenv()
 # CONFIG (Environment Variables ကနေ ယူမယ်)
 # ======================
 TOKEN = os.getenv("TOKEN")
-BOT_USERNAME = os.getenv("BOT_USERNAME") or None
-ADMIN_IDS = []
-for item in (os.getenv("ADMIN_IDS") or "").split(","):
-    item = item.strip()
-    if item:
-        try:
-            ADMIN_IDS.append(int(item))
-        except ValueError:
-            print(f"⚠️ Invalid ADMIN_IDS entry ignored: {item}")
-DATA_FILE = os.getenv("DATA_FILE") or "data.json"
-FORCE_JOIN_CHANNEL = os.getenv("FORCE_JOIN_CHANNEL") or ""
-MONGO_URI = os.getenv("MONGO_URI") or ""
-
-if not TOKEN:
-    raise RuntimeError("Missing required TOKEN environment variable")
+BOT_USERNAME = os.getenv("BOT_USERNAME")
+ADMIN_IDS = [int(i.strip()) for i in os.getenv("ADMIN_IDS").split(",")]
+DATA_FILE = os.getenv("DATA_FILE")
+FORCE_JOIN_CHANNEL = os.getenv("FORCE_JOIN_CHANNEL")
+MONGO_URI = os.getenv("MONGO_URI")
 
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
-
-if not BOT_USERNAME:
-    try:
-        BOT_USERNAME = bot.get_me().username
-    except Exception as e:
-        print(f"⚠️ Could not fetch BOT_USERNAME from Telegram API: {e}")
-        BOT_USERNAME = None
 
 # ======================
 # DATABASE SETUP (MongoDB)
 # ======================
 # MongoDB နဲ့ ချိတ်ဆက်မယ်
-client = None
-db = None
-brain_collection = None
-if MONGO_URI:
-    client = pymongo.MongoClient(MONGO_URI)
-    db = client['bot_database']
-    brain_collection = db['brain']
+client = pymongo.MongoClient(MONGO_URI)
+db = client['bot_database']
+brain_collection = db['brain']
 
-def init_mongo_connection():
-    if not MONGO_URI:
-        print("⚠️ MONGO_URI not configured; skipping MongoDB initialization.")
-        return
-    if client is None:
-        print("⚠️ MongoDB client unavailable; skipping MongoDB initialization.")
-        return
+def init_db():
     try:
         client.admin.command('ping')
         print("✅ MongoDB Connected Successfully!")
@@ -111,9 +82,6 @@ def is_joined(user_id):
     # Owner ဆိုရင် အလိုအလျောက် pass ဖြစ်မယ်
     if user_id in ADMIN_IDS:
         return True
-    if not FORCE_JOIN_CHANNEL:
-        print("⚠️ FORCE_JOIN_CHANNEL not configured; bypassing join check.")
-        return True
     try:
         member = bot.get_chat_member(FORCE_JOIN_CHANNEL, user_id)
         if member.status not in ['left', 'kicked']:
@@ -121,16 +89,6 @@ def is_joined(user_id):
     except Exception as e:
         print(f"[DEBUG] force-join check error for user {user_id}: {e}")
     return False
-
-def get_bot_username():
-    if BOT_USERNAME:
-        return BOT_USERNAME
-    try:
-        info = bot.get_me()
-        return info.username if info and info.username else None
-    except Exception as e:
-        print(f"[DEBUG] Could not resolve bot username: {e}")
-        return None
 
 # ======================
 # DATABASE (Learning System) - ထပ်တိုးပေါင်းထည့်မှု
@@ -718,9 +676,8 @@ def start(message):
             join_kb = InlineKeyboardMarkup()
             clean_channel = FORCE_JOIN_CHANNEL.replace('@', '')
             join_kb.add(InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{clean_channel}"))
-            bot_name = get_bot_username()
-            if bot_name:
-                join_kb.add(InlineKeyboardButton("🔄 Join ပြီးပါပြီ (စစ်ဆေးမည်)", url=f"https://t.me/{bot_name}?start=check"))
+            join_kb.add(InlineKeyboardButton("🔄 Join ပြီးပါပြီ (စစ်ဆေးမည်)", url=f"https://t.me/{BOT_USERNAME}?start=check"))
+            
             return bot.send_message(
                 message.chat.id, 
                 "<tg-emoji emoji-id='6269316311172518259'>❌</tg-emoji> <b>အသုံးပြုခွင့်မရှိသေးပါ!</b> <tg-emoji emoji-id='6257780484281997093'>❌</tg-emoji>\n\nဒီ Bot ကို သုံးဖို့အတွက် Group ကို အရင် Join ပေးရပါမယ်။",
@@ -897,11 +854,8 @@ def welcome_group(message):
                     print(f"   Bot ID: {bot_id}, Is Bot: {user.id == bot_id}")
                     # Bot ကိုယ်တိုင် Group ထဲ ရောက်သွားတဲ့အခါ နှုတ်ဆက်ရန်
                     if user.id == bot_id:
-                        msg = (
-                            "<tg-emoji emoji-id='5251299553239398548'>🤖</tg-emoji> <b>Guard Help Bot Active!</b>\n\n"
-                            "<tg-emoji emoji-id='5215613971352004352'>❤️</tg-emoji> ကျွန်မကို Admin ပေးထားဖို့ မမေ့ပါနဲ့ရှင့်။ <tg-emoji emoji-id='5215361191051798408'>❤️</tg-emoji>\n\n"
-                            "Spam linkတွေနဲ့ bioတွေကို အလိုအလျောက် ဖျက်ပေးပါမယ်။"
-                        )
+                        msg = "<tg-emoji emoji-id='5251299553239398548'>🤖</tg-emoji> <b>Guard Help Bot Active!</b>\n\n<tg-emoji emoji-id='5215613971352004352'>❤️</tg-emoji> ကျွန်မကို Admin ပေးထားဖို့ မမေ့ပါနဲ့ရှင့်။ <tg-emoji emoji-id='5215361191051798408'>❤️</tg-emoji>\n\nSpam linkတွေနဲ့ bioတွေကို အလိုအလျောက် ဖျက်ပေးပါမယ်။",
+                        reply_markup=main_buttons()
                         bot.send_message(message.chat.id, msg, reply_markup=main_buttons())
                         print(f"✅ Bot welcome message sent to group {message.chat.id}")
                     
@@ -988,9 +942,7 @@ def handle_all(message):
             join_kb = InlineKeyboardMarkup()
             clean_channel = FORCE_JOIN_CHANNEL.replace('@', '')
             join_kb.add(InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{clean_channel}"))
-            bot_name = get_bot_username()
-            if bot_name:
-                join_kb.add(InlineKeyboardButton("🔄 Join ပြီးပါပြီ (စစ်ဆေးမည်)", url=f"https://t.me/{bot_name}?start=check"))
+            join_kb.add(InlineKeyboardButton("🔄 Join ပြီးပါပြီ (စစ်ဆေးမည်)", url=f"https://t.me/{BOT_USERNAME}?start=check"))
             return bot.send_message(
                 message.chat.id,
                 "<tg-emoji emoji-id='6257780484281997093'>❌</tg-emoji> <b>အသုံးပြုခွင့်မရှိသေးပါ!</b>\n\nဒီ Bot ကို သုံးဖို့အတွက် Group ကို အရင် Join ပေးရပါမယ်။",
@@ -1189,8 +1141,8 @@ def handle_all(message):
                     return
 
             elif message.content_type == 'text':
-                current_reply = message.html_text if hasattr(message, 'html_text') and message.html_text else message.text
-                if current_reply and is_clean_text(current_reply):
+                current_reply = message.html_text 
+                if is_clean_text(current_reply):
                     save_to_brain(parent, current_reply)
                     print(f"✅ မှတ်သားပြီး (Text-to-Text): {parent[:30]}...")
                     return # သင်ယူပြီးရင် ဒီမှာတင် ရပ်လိုက်ပါ
@@ -1247,7 +1199,6 @@ def handle_all(message):
 # RUN (Error တက်လျှင် အလိုအလျောက် ပြန်ပတ်ပေးမည့် စနစ်)
 # ======================
 if __name__ == '__main__':
-    init_mongo_connection()
     init_db()
     print("🤖 Dating Bot is starting...")
     # No need to flush old updates, just rely on BOT_START_TIME
