@@ -91,55 +91,41 @@ def is_joined(user_id):
     return False
 
 # ======================
-# DATABASE (Learning System) - ထပ်တိုးပေါင်းထည့်မှု
+# DATABASE (Learning System) - MongoDB Version
 # ======================
 def init_db():
-    conn = sqlite3.connect('full_memory.db')
-    c = conn.cursor()
-    # sticker_id ဆိုတဲ့ column အသစ်ကို ထည့်လိုက်ပါတယ်
-    c.execute('''CREATE TABLE IF NOT EXISTS brain 
-                 (input_text TEXT, reply_text TEXT, sticker_id TEXT)''')
-    conn.commit()
-    conn.close()
+    # MongoDB collection is created automatically on first insert
+    pass
 
 def save_to_brain(q, a, is_html=False):
     # protect against invalid input
     if not q or not a:
         return
     try:
-        conn = sqlite3.connect('full_memory.db')
-        c = conn.cursor()
-        # handle_all မှာ q ကို lower() လုပ်ပြီးသားမို့လို့ ဒီမှာ q လို့ပဲ ထည့်ပါ
-        c.execute("INSERT INTO brain (input_text, reply_text, sticker_id) VALUES (?, ?, ?)", (q, a, None))
-        conn.commit()
+        brain_collection.insert_one({"input_text": q, "reply_text": a, "sticker_id": None})
     except Exception as e:
         print(f"⚠️ save_to_brain error: {e}")
-    finally:
-        try:
-            conn.close()
-        except:
-            pass
 
-# အပေါ်နားက get_reply ကို ဒါနဲ့ အစားထိုးပါ
 def get_reply(text):
     if not text: 
         print(f"[DEBUG] get_reply: text is empty")
         return None, None
     print(f"[DEBUG] get_reply called with: {text[:50]}..." if len(text) > 50 else f"[DEBUG] get_reply called with: {text}")
-    conn = sqlite3.connect('full_memory.db')
-    c = conn.cursor()
+    try:
+        all_docs = list(brain_collection.find({}))
+    except Exception as e:
+        print(f"[DEBUG] Error fetching from MongoDB: {e}")
+        return None, None
     
-    # Database ထဲက အချက်အလက်အားလုံးကို ယူမယ်
-    c.execute("SELECT input_text, reply_text, sticker_id FROM brain")
-    all_rows = c.fetchall()
-    conn.close()
-    
-    print(f"[DEBUG] Total rows in database: {len(all_rows)}")
+    print(f"[DEBUG] Total docs in database: {len(all_docs)}")
     
     user_input = text.lower().strip()
     possible_matches = []
     
-    for idx, (db_input, db_reply, db_sticker) in enumerate(all_rows):
+    for idx, doc in enumerate(all_docs):
+        db_input = doc.get("input_text")
+        db_reply = doc.get("reply_text")
+        db_sticker = doc.get("sticker_id")
         if db_input:
             db_input_clean = db_input.lower().strip()
             is_sticker_key = len(db_input_clean) > 50
@@ -397,16 +383,18 @@ def list_brain(message):
     # If user replied to a sticker always show brain entries for that sticker
     if message.reply_to_message and message.reply_to_message.sticker:
         sticker_id = message.reply_to_message.sticker.file_id
-        conn = sqlite3.connect('full_memory.db')
-        c = conn.cursor()
-        c.execute("SELECT rowid, input_text FROM brain WHERE sticker_id = ?", (sticker_id,))
-        results = c.fetchall()
-        conn.close()
+        try:
+            results = list(brain_collection.find({"sticker_id": sticker_id}, {"_id": 1, "input_text": 1}))
+        except Exception as e:
+            print(f"Error fetching sticker entries: {e}")
+            results = []
 
         if results:
             safe_sticker = html.escape(sticker_id)
             msg = f"<b>🎯 Sticker ID:</b>\n<code>{safe_sticker}</code>\n\n<b>ဒီ sticker မှတ်ထားတွေ:</b>\n"
-            for rowid, input_text in results:
+            for doc in results:
+                rowid = str(doc["_id"])
+                input_text = doc.get("input_text")
                 safe_input = html.escape(input_text[:50]) if input_text else ""
                 msg += f"• <code>{safe_input}</code>\n"
             msg += f"\n✂️ ဖျက်ချိုင်း: /d {safe_sticker}"
@@ -418,18 +406,22 @@ def list_brain(message):
 
     # Mode: brain -> list DB replies
     if mode == "brain":
-        conn = sqlite3.connect('full_memory.db')
-        c = conn.cursor()
-        c.execute("SELECT rowid, input_text, reply_text, sticker_id FROM brain")
-        all_entries = c.fetchall()
-        conn.close()
+        try:
+            all_entries = list(brain_collection.find({}))
+        except Exception as e:
+            print(f"Error fetching brain entries: {e}")
+            all_entries = []
 
         if not all_entries:
             bot.send_message(message.chat.id, "❌ မှတ်ဉာဏ်မှာ ဘာမျှ မရှိသေးပါ။", reply_to_message_id=message.message_id)
             return
 
         msg = f"<b>📚 မှတ်ဉာဏ်ရှိတဲ့ Entries ({len(all_entries)})</b>\n\n"
-        for idx, (rowid, input_text, reply_text, sticker_id) in enumerate(all_entries, 1):
+        for idx, doc in enumerate(all_entries, 1):
+            rowid = str(doc["_id"])
+            input_text = doc.get("input_text")
+            reply_text = doc.get("reply_text")
+            sticker_id = doc.get("sticker_id")
             safe_input = html.escape(input_text[:40]) if input_text else ""
             if sticker_id:
                 msg += f"<b>{idx}.</b> 📌 <code>{safe_input}</code>\n   ➜ 🎭 Sticker\n\n"
@@ -486,20 +478,16 @@ def delete_brain_entry(message):
         return bot.reply_to(message, "သုံးပုံ:\n/d နံပါတ် - /d 1\n/d စာလုံး - /d hello\n/d sticker_id - /d CAACAgIA...")
     target = args[1].strip()
     
-    conn = sqlite3.connect('full_memory.db')
-    c = conn.cursor()
     deleted = 0
     
     # Try as index/number
     try:
+        all_docs = list(brain_collection.find({}))
         index = int(target)
-        c.execute("SELECT rowid FROM brain LIMIT ?, 1", (index - 1,))
-        result = c.fetchone()
-        if result:
-            c.execute("DELETE FROM brain WHERE rowid = ?", (result[0],))
-            deleted = c.rowcount
-            conn.commit()
-        conn.close()
+        if 1 <= index <= len(all_docs):
+            doc = all_docs[index - 1]
+            result = brain_collection.delete_one({"_id": doc["_id"]})
+            deleted = result.deleted_count
         if deleted:
             bot.reply_to(message, f"✅ Entry #{index} ကို ဖျက်ပြီးပါပြီ။")
         else:
@@ -510,10 +498,12 @@ def delete_brain_entry(message):
     
     # Try as text input_text or sticker_id
     target_lower = target.lower()
-    c.execute("DELETE FROM brain WHERE LOWER(input_text) = ? OR sticker_id = ?", (target_lower, target))
-    deleted = c.rowcount
-    conn.commit()
-    conn.close()
+    try:
+        result = brain_collection.delete_many({"$or": [{"input_text": target_lower}, {"sticker_id": target}]})
+        deleted = result.deleted_count
+    except Exception as e:
+        print(f"Error deleting: {e}")
+        deleted = 0
     
     if deleted:
         bot.reply_to(message, f"✅ မှတ်ဉာဏ်ထဲက '{target}' ကို ဖျက်ပြီးပါပြီ။ ({deleted} entry)")
@@ -557,14 +547,10 @@ def delete_all_sticker_memory(message):
         return bot.reply_to(message, "❌ ဒီ command ကို Bot Owner သာ အသုံးပြုနိုင်ပါသည်။")
 
     try:
-        conn = sqlite3.connect('full_memory.db')
-        c = conn.cursor()
-        c.execute("SELECT COUNT(*) FROM brain WHERE sticker_id IS NOT NULL AND sticker_id <> ''")
-        count = c.fetchone()[0]
-        c.execute("DELETE FROM brain WHERE sticker_id IS NOT NULL AND sticker_id <> ''")
-        conn.commit()
-        conn.close()
-        bot.reply_to(message, f"✅ Sticker memory များကို ဖျက်ပြီးပါပြီ — {count} entries ဖျက်ပြီးပါပြီ။")
+        count = brain_collection.count_documents({"sticker_id": {"$ne": None, "$ne": ""}})
+        result = brain_collection.delete_many({"sticker_id": {"$ne": None, "$ne": ""}})
+        deleted_count = result.deleted_count
+        bot.reply_to(message, f"✅ Sticker memory များကို ဖျက်ပြီးပါပြီ — {deleted_count} entries ဖျက်ပြီးပါပြီ။")
     except Exception as e:
         bot.reply_to(message, f"❌ ဖျက်ပေးစရာအမှားတက်ပါသည်: {e}")
 
@@ -1124,21 +1110,13 @@ def handle_all(message):
 
         if parent:
             if message.content_type == 'sticker':
-                conn = sqlite3.connect('full_memory.db')
-                c = conn.cursor()
-                sticker_to_save = message.sticker.file_id
-                if sticker_to_save:
-                    print(f"[DEBUG] 🎯 Saving STICKER-TO-STICKER: parent_sticker={parent[:20]}... → reply_sticker={sticker_to_save[:20]}...")
-                    c.execute("INSERT INTO brain (input_text, reply_text, sticker_id) VALUES (?, ?, ?)", 
-                              (parent, None, sticker_to_save))
-                    conn.commit()
-                    conn.close()
+                print(f"[DEBUG] 🎯 Saving STICKER-TO-STICKER: parent_sticker={parent[:20]}... → reply_sticker={sticker_to_save[:20]}...")
+                try:
+                    brain_collection.insert_one({"input_text": parent, "reply_text": None, "sticker_id": sticker_to_save})
                     print(f"✅ မှတ်သားပြီး (Sticker-to-Sticker)")
-                    return
-                else:
-                    print(f"[DEBUG] ❌ Sticker file_id is empty!")
-                    conn.close()
-                    return
+                except Exception as e:
+                    print(f"⚠️ Error saving sticker-to-sticker: {e}")
+                return
 
             elif message.content_type == 'text':
                 current_reply = message.html_text 
