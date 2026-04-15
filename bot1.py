@@ -98,24 +98,45 @@ def init_db():
     # MongoDB collection is created automatically on first insert
     pass
 
-def save_to_brain(q, a, is_html=False):
-    # protect against invalid input
-    if not q or not a:
-        return
+def save_data():
+    # ဒီ function က အရင်အတိုင်းပဲ ထားပါ
+    pass
+
+def save_to_brain(input_text, reply_text, sticker_id):
     try:
-        brain_collection.insert_one({"input_text": q, "reply_text": a, "sticker_id": None})
+        # အဖြေတူတာ ရှိမရှိ အရင်စစ်မယ် (စာသားရော အဖြေရော တူနေရင် ထပ်မသိမ်းဖို့)
+        query = {
+            "input_text": input_text.lower().strip(), 
+            "reply_text": reply_text, 
+            "sticker_id": sticker_id
+        }
+        
+        if not brain_collection.find_one(query):
+            brain_collection.insert_one(query)
+            print(f"✅ အဖြေအသစ် တိုးမှတ်သားပြီး: {input_text} -> {reply_text if reply_text else 'Sticker'}")
     except Exception as e:
         print(f"⚠️ save_to_brain error: {e}")
 
 def get_reply(text):
-    if not text: 
-        print(f"[DEBUG] get_reply: text is empty")
+    if not text:
         return None, None
-    print(f"[DEBUG] get_reply called with: {text[:50]}..." if len(text) > 50 else f"[DEBUG] get_reply called with: {text}")
+        
+    user_input = text.lower().strip()
+    
     try:
-        all_docs = list(brain_collection.find({}))
+        # ၁။ input_text နဲ့ ကိုက်ညီတဲ့ အဖြေအားလုံးကိုပဲ သီးသန့်ဆွဲထုတ်မယ် (ဒါက ပိုမြန်တယ်)
+        results = list(brain_collection.find({"input_text": user_input}))
+        
+        if results:
+            # ၂။ အဖြေတွေ အများကြီးရှိရင် တစ်ခုကို Random (ကျဘန်း) ရွေးမယ်
+            # ဒါမှ စာသားတွေ မထပ်တော့မှာပါ
+            chosen = random.choice(results)
+            print(f"🎯 Found {len(results)} replies for '{user_input}', chose one randomly.")
+            return chosen.get("reply_text"), chosen.get("sticker_id")
+            
+        return None, None
     except Exception as e:
-        print(f"[DEBUG] Error fetching from MongoDB: {e}")
+        print(f"⚠️ Error: {e}")
         return None, None
     
     print(f"[DEBUG] Total docs in database: {len(all_docs)}")
